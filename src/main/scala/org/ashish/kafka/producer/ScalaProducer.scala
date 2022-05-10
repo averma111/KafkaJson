@@ -8,6 +8,8 @@ import org.ashish.kafka.dto.FastMessage
 import org.ashish.kafka.dto.FastMessageJsonImplicits._
 import play.api.libs.json.Json
 
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import scala.math.abs
 import scala.util.Random
 
@@ -32,14 +34,17 @@ class ScalaProducer {
       var jsonText: String = ""
       while (true) {
         jsonText= Json.toJson(
-          FastMessage("FastMessage_"+Random.nextInt().toString+"_"+Calendar.getInstance().getTimeInMillis.toString,
-                        UUID.randomUUID().toString)
+          FastMessage("FastMessage_"+Calendar.getInstance().getTimeInMillis.toString,
+                        UUID.randomUUID().toString,
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.ms").format(LocalDateTime.now())
+          )
         ).toString()
         producer.send(new ProducerRecord[String, String]("fast-messages",
           abs(Random.nextInt()).toString,
           jsonText))
         producer.flush()
         println("Sent msg")
+        Thread.sleep(2000L)
       }
     } catch {
 
