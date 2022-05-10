@@ -1,7 +1,7 @@
 package org.ashish.kafka.pubsub
 
 import com.google.cloud.spark.bigquery.repackaged.com.google.auth.oauth2.ServiceAccountCredentials
-import com.google.cloud.spark.bigquery.repackaged.com.google.cloud.bigquery.{BigQuery, BigQueryError, BigQueryOptions, BigtableColumn, InsertAllRequest, InsertAllResponse, Job, JobInfo, QueryJobConfiguration, TableId}
+import com.google.cloud.spark.bigquery.repackaged.com.google.cloud.bigquery.{BigQuery, BigQueryOptions,Job, JobInfo, QueryJobConfiguration}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.from_json
 import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, SparkSession, functions}
@@ -16,44 +16,55 @@ import org.slf4j.{Logger, LoggerFactory}
 import java.io.FileInputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import scala.math
-
-
+import scala.sys.exit
 
 object Pubsub extends App {
 
-  val pubsub = new Pubsub()
-  val sparkConf: SparkConf = new SparkConf().setAppName("Kafka-Pubsub").setMaster("local[*]")
-  val ssc = new StreamingContext(sparkConf, Milliseconds(10000))
   val projectId = "kafka-pubsub-usecase"
   val subscription = "demo-topic-pubusb-sub"
   val topic = "demo-topic-pubusb"
 
+  lazy val LOGGER: Logger = LoggerFactory.getLogger(Pubsub.getClass)
+  val pubsub = new Pubsub()
+  val sparkConf: SparkConf = new SparkConf().setAppName("Kafka-Pubsub").setMaster("local[*]")
+  if(sparkConf == null) {
+    LOGGER.warn("Failed to create the spark conf.Exiting the process")
+    exit(1)
+  }
+  val ssc = new StreamingContext(sparkConf, Milliseconds(10000))
+  if(ssc == null) {
+    LOGGER.warn("Failed to create the streaming context.Exiting the process")
+    exit(1)
+  }
+  LOGGER.warn("Creating the dstream by calling consume method")
   val streamRecord = pubsub.consume(projectId, subscription, ssc, Option(topic))
+  LOGGER.warn("Creating the spark dataset from streaming source")
   pubsub.createDataSetFromStream(streamRecord)
-
   ssc.start()
+  LOGGER.warn("Creating the checkpoint as location src/main/resources/checkpoint")
   ssc.checkpoint("src/main/resources/checkpoint")
   ssc.awaitTermination()
 }
 
 class Pubsub {
+  lazy val LOGGER: Logger = LoggerFactory.getLogger(Pubsub.getClass)
+
+  private val credentialFilePath = "src/main/resources/credentials/keys.json"
   implicit val topLevelObjectEncoder: Encoder[PubSubSchema] = Encoders.product[PubSubSchema]
-  lazy val logger: Logger = LoggerFactory.getLogger(getClass)
-  val credentialFilePath = "src/main/resources/credentials/keys.json"
-
   def consume(projectId: String, subscription: String, ssc: StreamingContext, topic: Option[String]): DStream[PubSubSchema] = {
-
     val pubsubStream = PubsubUtils.createStream(ssc, projectId, topic, subscription,
       SparkGCPCredentials.builder.jsonServiceAccount(credentialFilePath).build(),
       StorageLevel.MEMORY_AND_DISK_SER
     ).map(message =>
       new PubSubSchema(message.getData(), message.getMessageId(), message.getPublishTime())
     )
+    if(pubsubStream == null){
+      LOGGER.warn("Dstream object is not instantiated.Exiting the process")
+      exit(1)
+    }
     pubsubStream
 
   }
-
   def createDataSetFromStream(message: DStream[PubSubSchema]): Unit = {
     val messageSchema = StructType(Array(
       StructField("name", StringType, true),
@@ -62,7 +73,7 @@ class Pubsub {
     ))
     message.foreachRDD {
       rdd => {
-        val sparkSession = getInsance(rdd.sparkContext.getConf)
+        val sparkSession = getInstance(rdd.sparkContext.getConf)
         val pubSubDataSet: Dataset[PubSubSchema] = sparkSession.createDataset(rdd).as[PubSubSchema]
         val stringPubSubDF = pubSubDataSet.selectExpr("CAST(recordData as STRING)")
         val valueDf = stringPubSubDF.select(from_json(functions.col("recordData"), messageSchema)
@@ -71,6 +82,10 @@ class Pubsub {
           functions.col("recordData.eventid"),
           functions.col("recordData.ingestionTs"))
         // messageDf.show(2, truncate = false)
+        val count:Long = messageDf.count()
+        LOGGER.warn(s"The record count processed is ${count}")
+
+        LOGGER.warn("Calling dataframe writer method")
         writeDataFrameToBQ(messageDf)
       }
     }
@@ -86,27 +101,43 @@ class Pubsub {
       .setCredentials(
         ServiceAccountCredentials.fromStream(new FileInputStream(credentialFilePath))
       ).build().getService;
-    recordsDf.show(2,truncate= false)
+    if(bigquery == null) {
+      LOGGER.warn("Failed to create the bigquery client.Exiting the process")
+      exit(1)
+    }
+  //  recordsDf.show(2,truncate= false)
     val name = recordsDf.select("name").collect.map(f => f.getString(0)).toList
     val eventid = recordsDf.select("eventid").collect.map(f => f.getString(0)).toList
     val ingestionTs = recordsDf.select("ingestionTs").collect.map(f => f.getString(0)).toList.toString()
     val loadTs = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.ms").format(LocalDateTime.now())
+
     for (recordName <- name; recordEvent <- eventid;recordTs<-ingestionTs) {
       val query: String = s"INSERT INTO `${projectId}.${dataSetId}.${table}` " +
         s"VALUES('${recordName}','${recordEvent}','${recordTs}','${loadTs}');"
       print(recordName,recordEvent,recordTs,loadTs)
       val queryConfig: QueryJobConfiguration = QueryJobConfiguration.newBuilder(query).build
+      if(queryConfig == null) {
+        LOGGER.warn("Failed to create the queryConfig client.Exiting the process")
+        exit(1)
+      }
       val queryJob: Job = bigquery.create(JobInfo.newBuilder(queryConfig).build()).waitFor()
-      if (queryJob == null) throw new Exception("job no longer exists")
+      if(queryJob == null) {
+        LOGGER.warn("Failed to create the queryJob client.Exiting the process")
+        exit(1)
+      }
+     // if (queryJob == null) throw new Exception("job no longer exists")
       if (queryJob.getStatus.getError != null) throw new Exception(queryJob.getStatus.getError.toString)
       //val rowsInserted = queryJob.getStatistics
       println("Rows inserted")
     }
   }
 
-  def getInsance(sparkConf: SparkConf): SparkSession = {
+  def getInstance(sparkConf: SparkConf): SparkSession = {
     val sparkInstance = SparkSession.builder().config(sparkConf).getOrCreate()
+    if (sparkInstance == null) {
+      LOGGER.warn("Failed to create the sparkInstance.Exiting the process")
+      exit(1)
+    }
     sparkInstance
   }
-
 }
