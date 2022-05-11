@@ -31,7 +31,7 @@ class ScalaProducer {
   private def send(args: Array[String], topic: String): Unit = {
     LOGGER.warn("=============Starting the producer job================")
     var producer: KafkaProducer[String, String] = null
-    val props = Resources.getResource("producer.properties").openStream()
+    val props = Resources.getResource("development.properties").openStream()
     val properties = new Properties()
     properties.load(props)
     producer = new KafkaProducer[String, String](properties)

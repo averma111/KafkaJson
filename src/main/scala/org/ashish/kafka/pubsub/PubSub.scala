@@ -18,14 +18,14 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import scala.sys.exit
 
-object Pubsub extends App {
+object PubSub extends App {
 
   val projectId = "kafka-pubsub-usecase"
   val subscription = "demo-topic-pubusb-sub"
   val topic = "demo-topic-pubusb"
 
-  lazy val LOGGER: Logger = LoggerFactory.getLogger(Pubsub.getClass)
-  val pubsub = new Pubsub()
+  lazy val LOGGER: Logger = LoggerFactory.getLogger(PubSub.getClass)
+  val pubsub = new PubSub()
   val sparkConf: SparkConf = new SparkConf().setAppName("Kafka-Pubsub").setMaster("local[*]")
   if(sparkConf == null) {
     LOGGER.warn("Failed to create the spark conf.Exiting the process")
@@ -46,8 +46,8 @@ object Pubsub extends App {
   ssc.awaitTermination()
 }
 
-class Pubsub {
-  lazy val LOGGER: Logger = LoggerFactory.getLogger(Pubsub.getClass)
+class PubSub {
+  lazy val LOGGER: Logger = LoggerFactory.getLogger(PubSub.getClass)
 
   private val credentialFilePath = "src/main/resources/credentials/keys.json"
   implicit val topLevelObjectEncoder: Encoder[PubSubSchema] = Encoders.product[PubSubSchema]
@@ -67,9 +67,9 @@ class Pubsub {
   }
   def createDataSetFromStream(message: DStream[PubSubSchema]): Unit = {
     val messageSchema = StructType(Array(
-      StructField("name", StringType, true),
-      StructField("eventId", StringType, true),
-      StructField("ingestionTs",StringType,true)
+      StructField("name", StringType, nullable = true),
+      StructField("eventId", StringType, nullable = true),
+      StructField("ingestionTs",StringType,nullable = true)
     ))
     message.foreachRDD {
       rdd => {
@@ -82,9 +82,6 @@ class Pubsub {
           functions.col("recordData.eventid"),
           functions.col("recordData.ingestionTs"))
         // messageDf.show(2, truncate = false)
-        val count:Long = messageDf.count()
-        LOGGER.warn(s"The record count processed is ${count}")
-
         LOGGER.warn("Calling dataframe writer method")
         writeDataFrameToBQ(messageDf)
       }
@@ -106,15 +103,17 @@ class Pubsub {
       exit(1)
     }
   //  recordsDf.show(2,truncate= false)
+  val count:Long = recordsDf.count()
+    LOGGER.warn(s"The record count processed is ${count}")
     val name = recordsDf.select("name").collect.map(f => f.getString(0)).toList
     val eventid = recordsDf.select("eventid").collect.map(f => f.getString(0)).toList
-    val ingestionTs = recordsDf.select("ingestionTs").collect.map(f => f.getString(0)).toList.toString()
+    val ingestionTs = recordsDf.select("ingestionTs").collect.map(f => f.getString(0)).toList
     val loadTs = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.ms").format(LocalDateTime.now())
 
     for (recordName <- name; recordEvent <- eventid;recordTs<-ingestionTs) {
       val query: String = s"INSERT INTO `${projectId}.${dataSetId}.${table}` " +
         s"VALUES('${recordName}','${recordEvent}','${recordTs}','${loadTs}');"
-      print(recordName,recordEvent,recordTs,loadTs)
+      println(recordName,recordEvent,recordTs,loadTs)
       val queryConfig: QueryJobConfiguration = QueryJobConfiguration.newBuilder(query).build
       if(queryConfig == null) {
         LOGGER.warn("Failed to create the queryConfig client.Exiting the process")
