@@ -1,7 +1,7 @@
 package org.ashish.kafka.pubsub
 
 import com.google.cloud.spark.bigquery.repackaged.com.google.auth.oauth2.ServiceAccountCredentials
-import com.google.cloud.spark.bigquery.repackaged.com.google.cloud.bigquery.{BigQuery, BigQueryOptions,Job, JobInfo, QueryJobConfiguration}
+import com.google.cloud.spark.bigquery.repackaged.com.google.cloud.bigquery.{BigQuery, BigQueryOptions, Job, JobInfo, QueryJobConfiguration}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.functions.from_json
 import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, SparkSession, functions}
@@ -10,7 +10,9 @@ import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.{Milliseconds, StreamingContext}
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.pubsub.{PubsubUtils, SparkGCPCredentials}
+import org.ashish.kafka.config.Config
 import org.ashish.kafka.dto.PubSubSchema
+import org.ashish.kafka.pubsub.PubSub.config
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.FileInputStream
@@ -20,13 +22,13 @@ import scala.sys.exit
 
 object PubSub extends App {
 
-  val projectId = "kafka-pubsub-usecase"
-  val subscription = "demo-topic-pubusb-sub"
-  val topic = "demo-topic-pubusb"
+  private lazy val LOGGER: Logger = LoggerFactory.getLogger(PubSub.getClass)
+  private val config = new Config
 
-  lazy val LOGGER: Logger = LoggerFactory.getLogger(PubSub.getClass)
   val pubsub = new PubSub()
-  val sparkConf: SparkConf = new SparkConf().setAppName("Kafka-Pubsub").setMaster("local[*]")
+  val sparkConf: SparkConf = new SparkConf()
+    .setAppName(config.getProperties().getString("APP_NAME"))
+    .setMaster("local[*]")
   if(sparkConf == null) {
     LOGGER.warn("Failed to create the spark conf.Exiting the process")
     exit(1)
@@ -36,24 +38,25 @@ object PubSub extends App {
     LOGGER.warn("Failed to create the streaming context.Exiting the process")
     exit(1)
   }
-  LOGGER.warn("Creating the dstream by calling consume method")
-  val streamRecord = pubsub.consume(projectId, subscription, ssc, Option(topic))
+  LOGGER.warn("Creating the Dstream by calling consume method")
+  val streamRecord = pubsub.consume(config.getProperties().getString("PROJECT_ID"),
+    config.getProperties().getString("SUBSCRIPTION"), ssc, Option(config.getProperties().getString("TOPIC")))
   LOGGER.warn("Creating the spark dataset from streaming source")
   pubsub.createDataSetFromStream(streamRecord)
+  LOGGER.warn("Starting spark streaming context...")
   ssc.start()
   LOGGER.warn("Creating the checkpoint as location src/main/resources/checkpoint")
-  ssc.checkpoint("src/main/resources/checkpoint")
+  ssc.checkpoint(config.getProperties().getString("CHECKPOINT"))
   ssc.awaitTermination()
 }
 
 class PubSub {
   lazy val LOGGER: Logger = LoggerFactory.getLogger(PubSub.getClass)
 
-  private val credentialFilePath = "src/main/resources/credentials/keys.json"
   implicit val topLevelObjectEncoder: Encoder[PubSubSchema] = Encoders.product[PubSubSchema]
   def consume(projectId: String, subscription: String, ssc: StreamingContext, topic: Option[String]): DStream[PubSubSchema] = {
     val pubsubStream = PubsubUtils.createStream(ssc, projectId, topic, subscription,
-      SparkGCPCredentials.builder.jsonServiceAccount(credentialFilePath).build(),
+      SparkGCPCredentials.builder.jsonServiceAccount(config.getProperties().getString("CREDENTIAL_FILE_PATH")).build(),
       StorageLevel.MEMORY_AND_DISK_SER
     ).map(message =>
       new PubSubSchema(message.getData(), message.getMessageId(), message.getPublishTime())
@@ -89,20 +92,14 @@ class PubSub {
   }
 
   def writeDataFrameToBQ(recordsDf: DataFrame): Unit = {
-    // val bucketName = "pubsubtempbucket"
-    val dataSetId = "fastmessage"
-    val table = "streamingfastmessages"
-    val projectId = "kafka-pubsub-usecase"
-
-    val bigquery: BigQuery = BigQueryOptions.newBuilder().setProjectId(projectId)
+    val bigquery: BigQuery = BigQueryOptions.newBuilder().setProjectId(config.getProperties().getString("PROJECT_ID"))
       .setCredentials(
-        ServiceAccountCredentials.fromStream(new FileInputStream(credentialFilePath))
+        ServiceAccountCredentials.fromStream(new FileInputStream(config.getProperties().getString("CREDENTIAL_FILE_PATH")))
       ).build().getService;
     if(bigquery == null) {
       LOGGER.warn("Failed to create the bigquery client.Exiting the process")
       exit(1)
     }
-  //  recordsDf.show(2,truncate= false)
   val count:Long = recordsDf.count()
     LOGGER.warn(s"The record count processed is ${count}")
     val name = recordsDf.select("name").collect.map(f => f.getString(0)).toList
@@ -111,9 +108,10 @@ class PubSub {
     val loadTs = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.ms").format(LocalDateTime.now())
 
     for (recordName <- name; recordEvent <- eventid;recordTs<-ingestionTs) {
-      val query: String = s"INSERT INTO `${projectId}.${dataSetId}.${table}` " +
+      val query: String = s"INSERT INTO `${config.getProperties().getString("PROJECT_ID")}" +
+        s".${config.getProperties().getString("DATASET_ID")}" +
+        s".${config.getProperties().getString("TABLE_NAME")}` " +
         s"VALUES('${recordName}','${recordEvent}','${recordTs}','${loadTs}');"
-      println(recordName,recordEvent,recordTs,loadTs)
       val queryConfig: QueryJobConfiguration = QueryJobConfiguration.newBuilder(query).build
       if(queryConfig == null) {
         LOGGER.warn("Failed to create the queryConfig client.Exiting the process")
@@ -124,9 +122,7 @@ class PubSub {
         LOGGER.warn("Failed to create the queryJob client.Exiting the process")
         exit(1)
       }
-     // if (queryJob == null) throw new Exception("job no longer exists")
       if (queryJob.getStatus.getError != null) throw new Exception(queryJob.getStatus.getError.toString)
-      //val rowsInserted = queryJob.getStatistics
       println("Rows inserted")
     }
   }
