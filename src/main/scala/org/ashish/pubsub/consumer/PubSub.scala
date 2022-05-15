@@ -1,8 +1,7 @@
 package org.ashish.pubsub.consumer
 
 import com.google.cloud.spark.bigquery.repackaged.com.google.auth.oauth2.ServiceAccountCredentials
-import com.google.cloud.spark.bigquery.repackaged.com.google.cloud.bigquery._
-import org.apache.spark.SparkConf
+import com.google.cloud.spark.bigquery.repackaged.com.google.cloud.bigquery.{BigQuery, BigQueryOptions, Job, JobInfo, QueryJobConfiguration}
 import org.apache.spark.sql.functions.from_json
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.sql.{Dataset, _}
@@ -14,7 +13,6 @@ import org.ashish.common.config.Config
 import org.ashish.common.spark.SparkSingleton
 import org.ashish.impl.Logging
 import org.ashish.pubsub.dto.PubSubSchema
-import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.FileInputStream
 import java.time.LocalDateTime
@@ -29,7 +27,7 @@ class PubSub extends Logging {
       SparkGCPCredentials.builder.jsonServiceAccount(pubsubConfig.getPubSubProperties.getString("CREDENTIAL_FILE_PATH")).build(),
       StorageLevel.MEMORY_AND_DISK_SER
     ).map(message =>
-      new PubSubSchema(message.getData(), message.getMessageId(), message.getPublishTime())
+      PubSubSchema(message.getData(), message.getMessageId(), message.getPublishTime())
     )
     if(pubsubStream == null){
       logger.warn("Dstream object is not instantiated.Exiting the process")
@@ -47,7 +45,7 @@ class PubSub extends Logging {
     val sparkConf = new SparkSingleton
     message.foreachRDD {
       rdd => {
-        val sparkSession = sparkConf.getInstance((rdd.sparkContext.getConf))
+        val sparkSession = sparkConf.getInstance(rdd.sparkContext.getConf)
         val pubSubDataSet: Dataset[PubSubSchema] = sparkSession.createDataset(rdd).as[PubSubSchema]
         val stringPubSubDF = pubSubDataSet.selectExpr("CAST(recordData as STRING)")
         val valueDf = stringPubSubDF.select(from_json(functions.col("recordData"), messageSchema)

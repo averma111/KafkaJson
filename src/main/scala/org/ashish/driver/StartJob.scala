@@ -16,7 +16,8 @@ object StartJob extends Logging {
       println("Enter the valid pipeline parameter<Kafka or PubSub")
       exit(1)
     }
-    args(1) match {
+
+  args(0) match {
       case "Kafka" => {
         val config = new Config
         val scalaProducer = new ScalaProducer()
@@ -27,9 +28,10 @@ object StartJob extends Logging {
         val streamingContext = new SparkSingleton
         val ssc = streamingContext.createSparkStreamingContext
         val pubsub = new PubSub()
+        val topic = pubsubConfig.getPubSubProperties.getString("TOPIC")
         logger.warn("Creating the Dstream by calling consume method")
         val streamRecord = pubsub.consume(pubsubConfig.getPubSubProperties.getString("PROJECT_ID"),
-          pubsubConfig.getPubSubProperties.getString("SUBSCRIPTION"), ssc, Option(pubsubConfig.getPubSubProperties.getString("TOPIC")))
+          pubsubConfig.getPubSubProperties.getString("SUBSCRIPTION"), ssc, Some(topic))
         logger.warn("Creating the spark dataset from streaming source")
         pubsub.createDataSetFromStream(streamRecord)
         logger.warn("Starting spark streaming context...")
