@@ -55,7 +55,6 @@ class PubSub extends Logging {
         val messageDf = valueDf.select(functions.col("recordData.name"),
           functions.col("recordData.eventid"),
           functions.col("recordData.ingestionTs"))
-        // messageDf.show(2, truncate = false)
         logger.warn("Calling dataframe writer method")
         writeDataFrameToBQ(messageDf)
       }
