@@ -1,11 +1,12 @@
 package org.ashish.kafka.producer
 
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
+import org.ashish.common.config.Config
+import org.ashish.impl.Logging
+
 import java.util.{Calendar, Properties, UUID}
-import org.ashish.kafka.config.Config
 import org.ashish.kafka.dto.FastMessage
 import org.ashish.kafka.dto.FastMessageJsonImplicits._
-import org.slf4j.{Logger, LoggerFactory}
 import play.api.libs.json.Json
 
 import java.time.LocalDateTime
@@ -14,32 +15,22 @@ import scala.math.abs
 import scala.sys.exit
 import scala.util.Random
 
-object ScalaProducer {
-  val topic = "fast-messages"
-  def main(args: Array[String]): Unit = {
-    val scalaProducer = new ScalaProducer()
-    scalaProducer.send(args, topic)
-  }
-}
-class ScalaProducer {
+class ScalaProducer extends Logging {
+  private val kafkaConfig = new Config
+  def send(args: Array[String], topic: String): Unit = {
 
- lazy val LOGGER: Logger = LoggerFactory.getLogger(ScalaProducer.getClass)
-  val config = new Config
-
-  private def send(args: Array[String], topic: String): Unit = {
-    LOGGER.warn("=============Starting the producer job================")
+    logger.warn("=============Starting the producer job================")
     var producer: KafkaProducer[String, String] = null
-
     val properties = new Properties()
-    properties.put("bootstrap.servers",config.getProperties().getString("BOOTSTRAP_SERVERS"))
-    properties.put("key.serializer",config.getProperties().getString("KEY_SERIALIZER"))
-    properties.put("value.serializer",config.getProperties().getString("VALUE_SERIALIZER"))
-    properties.put("auto.commit.interval.ms",config.getProperties().getString("INTERVAL_MS"))
-    properties.put("max.block.ms",config.getProperties().getString("MAX_BLOCK_MS"))
+    properties.put("bootstrap.servers", kafkaConfig.getKafkaProperties.getString("BOOTSTRAP_SERVERS"))
+    properties.put("key.serializer", kafkaConfig.getKafkaProperties.getString("KEY_SERIALIZER"))
+    properties.put("value.serializer", kafkaConfig.getKafkaProperties.getString("VALUE_SERIALIZER"))
+    properties.put("auto.commit.interval.ms", kafkaConfig.getKafkaProperties.getString("INTERVAL_MS"))
+    properties.put("max.block.ms", kafkaConfig.getKafkaProperties.getString("MAX_BLOCK_MS"))
     producer = new KafkaProducer[String, String](properties)
 
-    if (producer == null)  {
-      LOGGER.warn("Failed to created the producer instance")
+    if (producer == null) {
+      logger.warn("Failed to created the producer instance")
       exit(1)
     }
     try {
@@ -48,16 +39,16 @@ class ScalaProducer {
         jsonText = Json.toJson(
           FastMessage("FastMessage_" + Calendar.getInstance().getTimeInMillis.toString,
             UUID.randomUUID().toString,
-            DateTimeFormatter.ofPattern(config.getProperties().getString("TIMESTAMP_PATTERN")).format(LocalDateTime.now())
+            DateTimeFormatter.ofPattern(kafkaConfig.getKafkaProperties.getString("TIMESTAMP_PATTERN")).format(LocalDateTime.now())
           )
         ).toString()
-        LOGGER.warn(s"The json to be pushed to topic:->${jsonText}")
+        logger.warn(s"The json to be pushed to topic:->${jsonText}")
         producer.send(new ProducerRecord[String, String](topic,
           abs(Random.nextInt()).toString,
           jsonText))
         producer.flush()
-        LOGGER.warn("Data sent to topic")
-        Thread.sleep(config.getProperties().getString("TIME_MILLI_SEC").toLong)
+        logger.warn("Data sent to topic")
+        Thread.sleep(kafkaConfig.getKafkaProperties.getString("TIME_MILLI_SEC").toLong)
       }
     }
     catch {
