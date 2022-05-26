@@ -203,33 +203,68 @@
   </dependencies>
 
   <build>
+    <sourceDirectory>src/main/scala</sourceDirectory>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+    </resources>
+
     <plugins>
+
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.1</version>
         <configuration>
-          <source>1.8</source>
-          <target>1.8</target>
+          <source>8</source>
+          <target>8</target>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>3.3.2</version>
+        <executions>
+          <execution>
+            <id>scala-complie-first</id>
+            <phase>process-resources</phase>
+            <goals>
+              <goal>add-source
+              </goal>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <jvmArgs>-Xms64m</jvmArgs>
+          <jvmArgs>-Xmx1024m</jvmArgs>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-assembly-plugin</artifactId>
+        <artifactId>maven-shade-plugin</artifactId>
         <version>3.3.0</version>
         <configuration>
-          <archive>
-            <manifest>
-              <mainClass>com.ashish.driver.StartJob</mainClass>
-            </manifest>
-          </archive>
-          <descriptorRefs>
-            <descriptorRef>jar-with-dependencies</descriptorRef>
-          </descriptorRefs>
+          <relocations>
+          </relocations>
+          <filters>
+            <filter>
+              <artifact>*:*</artifact>
+              <excludes>
+                <exclude>META-INF/*.SF</exclude>
+                <exclude>META-INF/*.DSA</exclude>
+                <exclude>META-INF/*.RSA</exclude>
+              </excludes>
+
+            </filter>
+          </filters>
+          <shadedArtifactAttached>true</shadedArtifactAttached>
+          <shadedClassifierName>uber</shadedClassifierName>
         </configuration>
         <executions>
           <execution>
-            <id>make-assembly</id>
+            <id>kafka-bq-shading</id>
             <phase>package</phase>
             <goals>
               <goal>shade</goal>
@@ -237,6 +272,7 @@
           </execution>
         </executions>
       </plugin>
+
     </plugins>
   </build>
 </project>
