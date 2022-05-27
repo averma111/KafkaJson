@@ -1,10 +1,11 @@
 package org.ashish.driver
 
-import org.ashish.common.config.Config
+import org.ashish.common.config.Getconfig
 import org.ashish.common.spark.SparkSingleton
 import org.ashish.impl.Logging
 import org.ashish.kafka.producer.ScalaProducer
 import org.ashish.pubsub.consumer.PubSub
+
 import scala.sys.exit
 
 
@@ -14,18 +15,16 @@ object StartJob extends Logging {
     if (args.length < 1) {
       println("Enter the valid pipeline parameter<Kafka or PubSub>")
       exit(1)
-
     }
-
   args(0) match {
       case "Kafka" =>
-        val config = new Config
+        val config = new Getconfig
 
         val scalaProducer = new ScalaProducer()
         scalaProducer.send(args, config.getKafkaProperties.getString("TOPIC"))
 
       case "PubSub" =>
-        val pubsubConfig = new Config
+        val pubsubConfig = new Getconfig
         val streamingContext = new SparkSingleton
         val ssc = streamingContext.createSparkStreamingContext
         val pubsub = new PubSub()

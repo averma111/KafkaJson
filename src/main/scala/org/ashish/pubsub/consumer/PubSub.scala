@@ -9,7 +9,7 @@ import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.StreamingContext
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.pubsub.{PubsubUtils, SparkGCPCredentials}
-import org.ashish.common.config.Config
+import org.ashish.common.config.Getconfig
 import org.ashish.common.spark.SparkSingleton
 import org.ashish.impl.Logging
 import org.ashish.pubsub.dto.PubSubSchema
@@ -20,7 +20,7 @@ import java.time.format.DateTimeFormatter
 import scala.sys.exit
 
 class PubSub extends Logging {
-   val pubsubConfig = new Config
+   val pubsubConfig = new Getconfig
   implicit val topLevelObjectEncoder: Encoder[PubSubSchema] = Encoders.product[PubSubSchema]
   def consume(projectId: String, subscription: String, ssc: StreamingContext, topic: Option[String]): DStream[PubSubSchema] = {
     val pubsubStream = PubsubUtils.createStream(ssc, projectId, topic, subscription,

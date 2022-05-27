@@ -1,7 +1,7 @@
 package org.ashish.kafka.producer
 
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
-import org.ashish.common.config.Config
+import org.ashish.common.config.Getconfig
 import org.ashish.impl.Logging
 
 import java.util.{Calendar, Properties, UUID}
@@ -16,7 +16,7 @@ import scala.sys.exit
 import scala.util.Random
 
 class ScalaProducer extends Logging {
-  private val kafkaConfig = new Config
+  private val kafkaConfig = new Getconfig
   def send(args: Array[String], topic: String): Unit = {
 
     logger.warn("=============Starting the producer job================")
