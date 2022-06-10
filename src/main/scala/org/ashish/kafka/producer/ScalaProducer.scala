@@ -14,6 +14,8 @@ import java.time.format.DateTimeFormatter
 import scala.math.abs
 import scala.sys.exit
 import scala.util.Random
+import org.apache.kafka.clients.admin.{AdminClient, ListTopicsOptions}
+
 
 class ScalaProducer extends Logging {
   private val kafkaConfig = new Getconfig
@@ -28,13 +30,24 @@ class ScalaProducer extends Logging {
     properties.put("auto.commit.interval.ms", kafkaConfig.getKafkaProperties.getString("INTERVAL_MS"))
     properties.put("max.block.ms", kafkaConfig.getKafkaProperties.getString("MAX_BLOCK_MS"))
     producer = new KafkaProducer[String, String](properties)
-
     if (producer == null) {
       logger.warn("Failed to created the producer instance")
       exit(1)
     }
+    try{
+      val client:AdminClient = AdminClient.create(properties)
+      client.listTopics(new ListTopicsOptions().timeoutMs(
+        kafkaConfig.getKafkaProperties.getString("ADMIN_CLIENT_TIMEOUT_MS").toInt)
+      ).listings().get()
+    }
+    catch {
+      case throwable: Throwable =>
+        val st = throwable.getStackTrace
+        logger.error("Kafka is not available, timed out after {} ms", kafkaConfig.getKafkaProperties.getString("ADMIN_CLIENT_TIMEOUT_MS").toInt)
+        exit(1)
+    }
     try {
-      var jsonText: String = ""
+      var jsonText = ""
       while (true) {
         jsonText = Json.toJson(
           FastMessage("FastMessage_" + Calendar.getInstance().getTimeInMillis.toString,
